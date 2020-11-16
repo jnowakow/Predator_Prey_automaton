@@ -2,7 +2,6 @@ package Logic
 
 import scala.collection.mutable
 import scala.collection.mutable.ListBuffer
-import util.control.Breaks._
 
 
 class Simulation(val params: SimulationParams) {
@@ -11,128 +10,97 @@ class Simulation(val params: SimulationParams) {
   private val lowerLeft = Point(0,0)
   private val upperRight = Point(params.mapWidth, params.mapHeight)
 
+
+  private def freeRandomPosition(): Point ={
+    var point = Point(rand.nextInt(params.mapWidth), rand.nextInt(params.mapHeight))
+
+    while (worldMap.contains(point)) {
+      point = Point(rand.nextInt(params.mapWidth), rand.nextInt(params.mapHeight))
+    }
+    point
+  }
+
+
   private def setUpSimulation(): Unit = {
 
-
     val size = params.mapHeight * params.mapWidth
-    val preyCount = (size * params.initialPreyPercentage / 100).toInt
-    val predatorCount = (size * params.initialPredatorPercentage / 100).toInt
-    var i = 0
+    val preyCount = (size * params.initialPreyPercentage).toInt
+    val predatorCount = (size * params.initialPredatorPercentage).toInt
 
-    while (i < preyCount){
-      val point = Point(rand.nextInt(params.mapWidth), rand.nextInt(params.mapHeight))
-
-      breakable {
-        if (worldMap.contains(point)) {
-          break
-        }
-        val animal = Prey(point)
-        worldMap(point) = animal
-        i += 1
-
-      }
-
-
+    for (_ <- 1 to preyCount){
+      val point = freeRandomPosition()
+      worldMap(point) = Prey(point)
     }
 
-    i = 0
-    while (i < predatorCount){
-      val point = Point(rand.nextInt(params.mapWidth), rand.nextInt(params.mapHeight))
-
-      breakable {
-        if (worldMap.contains(point)) {
-          break
-        }
-        val animal = Predator(point)
-        worldMap(point) = animal
-        i += 1
-      }
-
+    for (_ <- 1 to predatorCount){
+      val point = freeRandomPosition()
+      worldMap(point) = Predator(point)
     }
 
   }
 
   setUpSimulation()
 
-  def findNearbyPrey(position: Point): Option[Point] = {
-    for(i <- -1 to 1){
-      for(j <- -1 to 1){
-        breakable{
-          if(i == 0 && j == 0){
-            break
-          }
+  def inMap(point: Point): Boolean = point.precedes(upperRight) && point.follows(lowerLeft)
 
-        val pos = position.add(new Point(i, j))
-        val animal = worldMap.getOrElse(pos, None)
+  def findNearbyPrey(position: Point): Option[Point] = {
+
+    for(i <- -1 to 1;
+        j <- -1 to 1
+        if i != 0 || j != 0){
+      val tryPosition = position.add(new Point(i, j))
+      if(inMap(tryPosition)){
+        val animal = worldMap.getOrElse(tryPosition, None)
 
         animal match {
-          case Prey(pos) => {
-            return Some(pos)
-          }
-          case other => {
-            Unit
-          }
-
+          case Prey(_) =>
+            return Some(tryPosition)
+          case other => Unit
         }
-
       }
-    }
     }
     None
   }
 
   def findSafePosition(position: Point): Option[Point] = {
-    var pos = position
     var freePosition = position
-    for(i <- -1 to 1){
-      for(j <- -1 to 1){
-        breakable{
-          if(i == 0 && j == 0){
-            break
-          }
-        }
 
-        pos = position.add(new Point(i, j))
-        val animal = worldMap.getOrElse(pos, None)
+    for(i <- -1 to 1;
+        j <- -1 to 1
+        if i != 0 || j != 0) {
+
+      val tryPosition = position.add(new Point(i, j))
+      if(inMap(tryPosition)) {
+        val animal = worldMap.getOrElse(tryPosition, None)
 
         animal match {
-          case Predator(pos) => return None
-          case None => freePosition = pos
-          case other => Unit
+          case Predator(_) => return None
+          case None => freePosition = tryPosition
+          case Prey(_) => Unit
         }
-
       }
     }
 
-    Some(freePosition)
-  }
-
-  def inMap(point: Point): Boolean = {
-    if(point.precedes(upperRight) && point.follows(lowerLeft)){
-      true
-      }
-      else {
-      false
+    if (freePosition != position) {
+      Some(freePosition)
+    }
+    else {
+      None
     }
   }
+
 
   def findFreePositions(position: Point): Option[ListBuffer[Point]] = {
     val freePositions = new ListBuffer[Point]
-    var pos = position
 
-    for (i <- -1 to 1) {
-      for (j <- -1 to 1) {
-        breakable {
-          if (i == 0 && j == 0) {
-            break
-          }
-        }
+    for(i <- -1 to 1;
+        j <- -1 to 1
+        if i != 0 || j != 0) {
 
-        pos = position.add(new Point(i, j))
-        if (!worldMap.contains(pos) && inMap(pos) ){
-          freePositions.append(pos)
+        val tryPosition = position.add(new Point(i, j))
+        if (!worldMap.contains(tryPosition) && inMap(tryPosition) ){
+          freePositions.append(tryPosition)
         }
-      }
     }
 
     if(freePositions.nonEmpty) {
@@ -146,72 +114,59 @@ class Simulation(val params: SimulationParams) {
     val preys = new ListBuffer[Animal]
     val predators = new ListBuffer[Animal]
 
-    worldMap.foreach{
-      case (point, animal) =>
-        animal match {
-          case Prey(initialPosition) => preys.append(animal)
-          case Predator(initialPosition) => predators.append(animal)
-        }
+    worldMap.values.foreach {
+      case animal@Prey(_) => preys.append(animal)
+      case animal@Predator(_) => predators.append(animal)
     }
 
     (predators.toList, preys.toList)
   }
 
   def nextState(): (List[Animal], List[Animal]) = {
-    val result = resultLists()
 
-    val animalsToRemove = new ListBuffer[Point]
-    val animalToAdd = new ListBuffer[Animal]
-    worldMap.foreach{
-
-      case (point, animal) =>
-        animal match {
-          case Predator(position) =>
-            findNearbyPrey(position) match {
-              case Some(point) => {
-                animalsToRemove.append(point)
-                animalToAdd.append(Predator(point))
-              }
-              case None =>
-                animalsToRemove.append(position)
-            }
-          case other => Unit
+    worldMap.values.foreach {
+      case animal@Predator(_)
+      =>
+        if (rand.nextDouble() > params.predatorDeathProbability) {
+          findNearbyPrey(animal.position) match {
+            case Some(point) =>
+              worldMap.remove(point)
+              worldMap(point) = Predator(point)
+            case None =>
+              worldMap.remove(animal.position)
+          }
+        } else {
+          worldMap.remove(animal.position)
         }
+      case animal@Prey(_) => Unit
 
     }
 
-    for(p <- animalsToRemove) {
-      worldMap.remove(p)
-    }
-
-    worldMap.foreach {
-      case (point, animal) =>
-        animal match {
-          case Prey(position) =>
+    worldMap.values.foreach {
+      case Prey(position) =>
+          if(rand.nextDouble() < params.preyBirthProbability){
             findSafePosition(position) match {
-              case Some(point) =>
-                animalToAdd.append(Prey(point))
+              case Some(safePosition) => worldMap(safePosition) = Prey(safePosition)
               case None => Unit
             }
-          case other => Unit
-        }
+          }
+      case other => Unit
     }
 
-    for(animal <- animalToAdd){
-      if(!worldMap.contains(animal.position)){
-        worldMap(animal.position) = animal
-      }
-    }
 
-    worldMap.foreach{
-      case (point, animal) =>
-        findFreePositions(point) match {
-          case Some(list) => animal.move(list)
+    worldMap.values.foreach{
+      animal =>
+        findFreePositions(animal.position) match {
+          case Some(list) =>
+            worldMap.remove(animal.position)
+            animal.move(list)
+            worldMap(animal.position) = animal
           case None => Unit
         }
+
     }
 
-    result
+    resultLists()
   }
 
 

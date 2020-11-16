@@ -16,6 +16,7 @@ import scalafx.embed.swing.SwingFXUtils
 import scalafx.geometry.Insets
 import scalafx.scene.Scene
 import scalafx.scene.canvas.Canvas
+import scalafx.scene.chart.LineChart
 import scalafx.scene.control.{Button, TextField}
 import scalafx.scene.image.WritableImage
 import scalafx.scene.layout.{BorderPane, HBox, Pane, VBox}
@@ -30,20 +31,18 @@ class CellAutomataVisualizer(params: SimulationParams) extends Pane{
   val mainWindow = new BorderPane()
   val canvas = new Canvas(canvasWidth,canvasHeight)
   val gc = canvas.getGraphicsContext2D
-  val simulation = new Simulation(params)
+  var simulation = new Simulation(params)
   var day = 0
-  var filename :String = ""
   var running = false
-
 
   visualizeState(simulation.resultLists())
 
-  val animalData = Seq(("Herbivores",ObservableBuffer(Seq(
+  val animalData = Seq(("Preys",ObservableBuffer(Seq(
     (0, params.mapHeight * params.mapWidth * params.initialPreyPercentage /100)
   ) map  {
     case(x,y) => new XYChart.Data[Number, Number](x,y)
   })),
-    ("Carnivores",ObservableBuffer(Seq(
+    ("Predator", ObservableBuffer(Seq(
       (0, params.mapHeight * params.mapWidth * params.initialPredatorPercentage /100)
     ) map  {
       case(x,y) => new XYChart.Data[Number, Number](x,y)
@@ -51,11 +50,10 @@ class CellAutomataVisualizer(params: SimulationParams) extends Pane{
   )
 
 
-
-  val animalsChart = SimulationLineChart("Animal population", animalData)
+  val animalsChart: LineChart[Number, Number] = SimulationLineChart("Animal population", animalData)
 
   var last = 0L
-  val timer = AnimationTimer( t => {
+  val timer: AnimationTimer = AnimationTimer(t => {
     if (last > 0) {
       if ((t - last)/ 1e9 > 0.2) {
         val lists = simulation.nextState()
@@ -71,16 +69,14 @@ class CellAutomataVisualizer(params: SimulationParams) extends Pane{
     }
   })
 
-
-
-
-  def addSquare(position: Point, color: Color) = {
+  
+  def addSquare(position: Point, color: Color): Unit = {
     gc.setFill(color)
     gc.fillRect(position.x * canvasWidth / params.mapWidth, position.y * canvasHeight / params.mapHeight,
       canvasWidth/params.mapWidth, canvasHeight/params.mapHeight)
   }
 
-  def visualizeState(lists:(List[Animal], List[Animal])) {
+  def visualizeState(lists:(List[Animal], List[Animal])): Unit = {
     gc.setFill(Color.White)
     gc.fillRect(0,0, canvasWidth, canvasHeight);
     lists._1 foreach  {
@@ -101,7 +97,7 @@ class CellAutomataVisualizer(params: SimulationParams) extends Pane{
 
 
 
-  val stopButton = new Button(){
+  val stopButton: Button = new Button(){
     text = "Start simulation"
     onMouseClicked = (_) => {
       if (running) {
@@ -113,49 +109,67 @@ class CellAutomataVisualizer(params: SimulationParams) extends Pane{
         running = true
         text = "Stop simulation"
       }
-
     }
-
   }
 
-
-  val filenameBox = new TextField(){
-    promptText = "Enter filename"
-    text.onChange( (_,_, newValue) =>{
-      filename = util.Try(newValue).getOrElse("chart.png")
-    })
-  }
-
-  val saveChartToPng = new Button(){
-    text = "Save chart"
+  val resetButton: Button = new Button(){
+    text = "Reset simulation"
     onMouseClicked = (_) => {
-      val img = animalsChart.snapshot(null, null)
-      val file = new File(filename + ".png")
-      ImageIO.write(SwingFXUtils.fromFXImage(img, null), "png", file)
-    }
+      simulation = new Simulation(params)
+      }
   }
 
-  val rightWindow = new VBox() {
+
+  val rightWindow: VBox = new VBox() {
     padding = Insets(5,5,5,5)
     spacing = 10
   }
 
-  private val buttonPanel = new HBox() {
+  private val buttonPanel: HBox = new HBox() {
     padding = Insets(5,5,5,5)
     spacing = 5
     children.addAll(
       stopButton,
-      saveChartToPng,
-      filenameBox
+      resetButton
+    )
+  }
+
+  val predatorDeathProbability: TextField = new TextField{
+    text.onChange( (_,_, newValue) =>{
+      params.predatorDeathProbability = util.Try(newValue.toDouble).getOrElse(params.predatorDeathProbability)
+    })
+    promptText = "Predators' death probability"
+  }
+
+  val preyBirthProbability: TextField = new TextField{
+    text.onChange( (_,_, newValue) =>{
+      params.preyBirthProbability = util.Try(newValue.toDouble).getOrElse(params.preyBirthProbability)
+    })
+    promptText = "Preys' birth probability"
+  }
+
+
+  private val paramsChangePanel: HBox = new HBox() {
+    padding = Insets(5,5,5,5)
+    spacing = 5
+    children.addAll(
+      stopButton,
+      resetButton,
+      preyBirthProbability,
+      predatorDeathProbability
     )
   }
 
   rightWindow.children.addAll(
     animalsChart,
-    buttonPanel
+    buttonPanel,
+    paramsChangePanel
   )
 
-  val centralPane = new HBox() {
+
+
+
+  val centralPane: HBox = new HBox() {
     padding = Insets(5,5,5,5)
     spacing = 10
   }
@@ -166,7 +180,6 @@ class CellAutomataVisualizer(params: SimulationParams) extends Pane{
 
   mainWindow.top = centralPane
   children.add(mainWindow)
-
 
 }
 
